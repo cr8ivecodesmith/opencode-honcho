@@ -197,6 +197,9 @@ const trimHyphenEdges = (value: string) => {
 const normalizeId = (value: string) =>
   trimHyphenEdges(value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")) || "default"
 
+const sanitizePeerId = (value: string) =>
+  trimHyphenEdges(value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-")) || "default"
+
 const isLocalBaseUrl = (value: string) => {
   if (!value.trim()) return false
   try {
@@ -629,7 +632,7 @@ const deriveUserPeerId = (settings: Pick<HonchoSettings, "peerName" | "removeUse
   // removeUserPrefix=true drops the `user-` prefix to match the sibling
   // claude-honcho / hermes-honcho plugins; false (the legacy-safe default)
   // keeps the historical `user-<name>` peer and its accumulated memory.
-  return settings.removeUserPrefix ? normalizeId(name) : normalizeId(`user:${name}`)
+  return settings.removeUserPrefix ? sanitizePeerId(name) : sanitizePeerId(`user:${name}`)
 }
 
 const assertDistinctUserAndAgentPeers = (userPeerId: string, rootAgentPeerId: string) => {
@@ -783,14 +786,14 @@ const deriveRuntimeHandle = async (
   const sessionId = extractSessionId(input)
   const repoName = path.basename(rootDir)
   const workspaceId = normalizeId(settings.workspace || "opencode")
-  const rootAgentPeerId = normalizeId(settings.aiPeer || "opencode")
+  const rootAgentPeerId = sanitizePeerId(settings.aiPeer || "opencode")
   // If the bare form collides with the agent peer (peerName === aiPeer), fall back
   // to the prefixed form to keep user and agent memory distinct, rather than
   // throwing on this hot path (deriveRuntimeHandle runs in unguarded hooks).
   // assertDistinct only fires for a genuinely unresolvable config.
   let userPeerId = deriveUserPeerId(settings)
   if (userPeerId === rootAgentPeerId) {
-    userPeerId = normalizeId(`user:${settings.peerName || currentUserName()}`)
+    userPeerId = sanitizePeerId(`user:${settings.peerName || currentUserName()}`)
   }
   assertDistinctUserAndAgentPeers(userPeerId, rootAgentPeerId)
   const activeAgentPeerId = rootAgentPeerId
@@ -1718,6 +1721,7 @@ export const __testing = {
   upsertAssistantMessagePart,
   extractSessionId,
   normalizeId,
+  sanitizePeerId,
   sessionPeerAdditions,
 }
 export default HonchoRuntimePlugin

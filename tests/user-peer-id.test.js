@@ -10,3 +10,8 @@ test("removeUserPrefix=false (the default) keeps the legacy user- prefix", () =>
 test("removeUserPrefix=true drops the prefix", () => {
   expect(__testing.deriveUserPeerId({ peerName: "rui", removeUserPrefix: true })).toBe("rui")
 })
+
+test("deriveUserPeerId preserves case for peerName", () => {
+  expect(__testing.deriveUserPeerId({ peerName: "Rui", removeUserPrefix: false })).toBe("user-Rui")
+  expect(__testing.deriveUserPeerId({ peerName: "Rui", removeUserPrefix: true })).toBe("Rui")
+})
