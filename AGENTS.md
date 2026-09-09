@@ -16,7 +16,7 @@ Workflow to keep things focused:
 ## Git Management
 
 - Never work on the `main` branch. Development happens on the local tracking branch (`local`), which tracks the upstream plugin while maintaining its own changes.
-- At the start of a session: `git fetch origin upstream`, then integrate updates into the working branch before starting work — merge `origin/main` if it moved, and integrate new `upstream/main` commits if the fork has not caught up. Report the integration (merge commit, conflicts, test status) before proceeding with other work.
+- At the start of a session: `git fetch origin && git fetch upstream`, then integrate updates into the working branch before starting work — merge `origin/main` if it moved, and integrate new `upstream/main` commits if the fork has not caught up. Report the integration (merge commit, conflicts, test status) before proceeding with other work.
 - Commit message pattern:
 
   ```text
@@ -25,6 +25,11 @@ Workflow to keep things focused:
   ```
 
   Types: `feat`, `fix`, `test`, `docs`, `chore`, `refactor`. One-sentence summary; bullets only when there is more than one notable change.
+- Commit changes before moving on to another ticket item.
+
+## Workspace Boundaries
+
+- Do not read, write, or move files outside the project tree. When scratch space or a scratch environment is needed, use a temporary container (podman) instead of touching host paths.
 
 ## Code and Testing Conventions
 
@@ -34,6 +39,7 @@ Workflow to keep things focused:
 
 ### Test execution
 
-- All test runs go through `scripts/test-container.sh` (podman). Never run bare `bun test` on the host: the agent shell carries live `HONCHO_*` env vars and `~/.honcho` config that leak into the suite.
+- Builds and tests run only inside the podman container via `scripts/test-container.sh`. Never run bare `bun test` or `bun run build` on the host: the agent shell carries live `HONCHO_*` env vars and `~/.honcho` config that leak into the suite.
+- Environment effect simulations (e.g. ambient `HONCHO_*` vars) run inside the container by passing the vars explicitly: `scripts/test-container.sh -e HONCHO_API_KEY=test ...`. Never simulate by running on the host.
 - The container runs with `--network none` and an isolated HOME. Tests must stay deterministic: mocked I/O only, no live Honcho, no real inference, no timing assumptions.
 - New tests must pass in the container before committing.
