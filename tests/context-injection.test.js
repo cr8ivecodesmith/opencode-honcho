@@ -53,8 +53,9 @@ const summary = (content) => ({
   token_count: 12,
 })
 
-const createHonchoFetch = ({ failStableHydration = false } = {}) => {
+const createHonchoFetch = ({ failStableHydration = false, deferChat = false } = {}) => {
   const calls = []
+  const pendingChatReleases = []
   const fetch = async (url, init = {}) => {
     const target = new URL(typeof url === "string" ? url : url.toString())
     const method = init.method || "GET"
@@ -127,6 +128,11 @@ const createHonchoFetch = ({ failStableHydration = false } = {}) => {
       if (failStableHydration) {
         return jsonResponse({ message: "chat unavailable" }, { status: 400 })
       }
+      if (deferChat) {
+        return new Promise((resolve) => {
+          pendingChatReleases.push(() => resolve(jsonResponse({ content: "Durable project memory is available." })))
+        })
+      }
       return jsonResponse({ content: "Durable project memory is available." })
     }
 
@@ -142,6 +148,11 @@ const createHonchoFetch = ({ failStableHydration = false } = {}) => {
     throw new Error(`Unexpected Honcho request in test: ${method} ${target.pathname}`)
   }
   fetch.calls = calls
+  fetch.releasePendingChats = () => {
+    for (const release of pendingChatReleases.splice(0)) {
+      release()
+    }
+  }
   return fetch
 }
 
@@ -241,6 +252,42 @@ test("system transform seals the stable context on the first turn", async () => 
   } finally {
     Date.now = originalNow
   }
+})
+
+test("overlapping session.created and system.transform hydrations share one dialectic fan-out", async () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+  const waitFor = async (predicate) => {
+    for (let i = 0; i < 50; i++) {
+      if (predicate()) return
+      await tick()
+    }
+  }
+
+  await runWithHarness(async ({ hooks, fetch }) => {
+    const chatCalls = () =>
+      fetch.calls.filter((call) => call.method === "POST" && /\/peers\/[^/]+\/chat$/.test(call.pathname))
+
+    const created = hooks.event({
+      event: { type: "session.created", properties: { sessionID: "ses-test" } },
+    })
+    await waitFor(() => chatCalls().length >= 2)
+
+    const output = { system: [] }
+    const transformed = hooks["experimental.chat.system.transform"](systemInput(), output)
+    await waitFor(() => chatCalls().length > 2 || output.system.length > 1)
+    for (let i = 0; i < 10; i++) {
+      await tick()
+    }
+
+    // Desired: both callers await one shared hydration (2 dialectic chat
+    // calls). Observed before the in-flight guard: each caller hydrates on
+    // its own (4 dialectic chat calls).
+    expect(chatCalls()).toHaveLength(2)
+
+    fetch.releasePendingChats()
+    await created
+    await transformed
+  }, { deferChat: true })
 })
 
 test("chat.message skips recall for trivial prompt text", async () => {
