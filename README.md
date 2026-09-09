@@ -26,6 +26,8 @@ To update an existing plugin install:
 opencode plugin "@honcho-ai/opencode-honcho" --force
 ```
 
+Existing installs keep **directional** observation until you choose. After updating, OpenCode prompts you to keep directional or switch to unified (also via `/honcho:setup` or `/honcho:config`). If you switch to unified, you can optionally run `/honcho:import` to reingest local OpenCode transcripts into the new collection.
+
 This command expects the `opencode` CLI to already be installed and available on your `PATH`.
 If your shell cannot find `opencode`, restart your shell or source your shell config and run the command again.
 
@@ -37,16 +39,19 @@ If your shell cannot find `opencode`, restart your shell or source your shell co
 4. Enter your Honcho API key
 5. Enter your `peerName`
 6. Run `/honcho:status` to verify the runtime
+7. If you are upgrading an existing install, choose directional vs unified when prompted. After switching to unified, optionally run `/honcho:import` to backfill local history
 
 ## What You Get
 
 - **Persistent Memory** - OpenCode can retain durable context across sessions
+- **Hook-Driven Memory** - Hooks inject memory into the prompt and record significant tool activity, so recall works regardless of the model
+- **Honcho Memory Skill** - A `honcho-memory` skill is installed into OpenCode's skills directory so the agent knows when to pull and save memory on its own
 - **Cloud or Local Deployments** - Use Honcho Cloud or point at a self-hosted or local Honcho instance
 - **Workspace Mapping** - OpenCode projects map to Honcho workspaces
 - **Session Mapping** - Sessions can be scoped per directory, repo, branch, chat instance, or globally
 - **Durable Writes** - Honcho can retain stable conclusions and session context
 - **Memory Retrieval** - Search memory, query Honcho knowledge, and inject relevant context into prompts
-- **Peer Modeling** - User and root-agent peers follow a fixed observation model tuned for OpenCode
+- **Peer Modeling** - User and root-agent observation flags are configurable (`observationMode`, `agentObserveMe`)
 
 ## Installation Output
 
@@ -75,6 +80,8 @@ OpenCode reads and writes this shared config file directly. OpenCode-specific de
       "workspace": "opencode",
       "aiPeer": "opencode",
       "recallMode": "hybrid",
+      "observationMode": "unified", // new installs; existing configs without this field stay directional
+      "agentObserveMe": false, // true opts into self-observation on the root agent peer
       "sessionStrategy": "per-directory",
       "removeUserPrefix": true, // true uses the bare peerName; false (default on upgrade) keeps the legacy user-<peerName> peer
       "apiKey": "hch-..." // optional; overrides the root apiKey for this host
@@ -108,6 +115,41 @@ If OpenCode is running in Docker or another remote environment, `localhost` may 
 | `chat-instance` | Session follows the current chat instance | Highly ephemeral usage |
 | `global` | One session for everything | Shared memory across all work |
 
+### Observation Mode
+
+Controls which Honcho collection `honcho_chat`, `honcho_create_conclusion`, and targeted prompt recall use for the user. This is independent of `agentObserveMe` (whether the agent peer is modeled). Changing modes does not migrate existing conclusions — use `/honcho:import` to backfill local OpenCode transcripts so Honcho can derive into the new collection.
+
+| Mode | Collection | Best for |
+| --- | --- | --- |
+| `unified` (default on new installs) | The user's self-collection (`observer=user`, `observed=user`) | Shared workspaces where multiple agents should recall each other's conclusions about the user |
+| `directional` (existing installs until set) | This AI peer's view of the user (`observer=aiPeer`, `observed=user`) | Isolated per-agent memory; previous OpenCode behavior |
+
+New `~/.honcho/config.json` files stamp `observationMode: "unified"`. Configs that predate the field keep **directional** so an upgrade does not orphan already-derived memory. After updating, OpenCode prompts you to keep directional or switch to unified (`/honcho:setup`, `/honcho:config`, or the TUI launch dialog). If you switch, optionally run `/honcho:import` to reingest local OpenCode transcripts:
+
+```json
+{
+  "hosts": {
+    "opencode": {
+      "observationMode": "unified"
+    }
+  }
+}
+```
+
+### Agent self-observation
+
+The root agent peer is created with `observeMe: false` by default: Honcho models the user, not the assistant. Set `agentObserveMe` to `true` if you want a peer card / representation of the agent itself.
+
+```json
+{
+  "hosts": {
+    "opencode": {
+      "agentObserveMe": true
+    }
+  }
+}
+```
+
 ## Operator Commands
 
 | Command | Description |
@@ -116,6 +158,15 @@ If OpenCode is running in Docker or another remote environment, `localhost` may 
 | `/honcho:status` | Show effective Honcho status for the current OpenCode project, including live workspace and session names when available |
 | `/honcho:settings` | Show effective config values and config paths |
 | `/honcho:config` | Edit shared Honcho fields in `~/.honcho/config.json` |
+| `/honcho:import` | Preview or import your local OpenCode session history into Honcho |
+
+### Importing local history
+
+`/honcho:import` reads session history through the OpenCode SDK client that the plugin receives, maps sessions with the same `sessionStrategy` as live capture, and uploads user/assistant text with original timestamps.
+
+- First call (or the TUI preview) is a dry run — it does not upload.
+- Confirming sends conversation content to Honcho. Already-imported sessions are skipped (`~/.honcho/opencode-import-state.json`).
+- After switching an existing install to `observationMode: "unified"`, import so past transcripts can be derived into the user self-collection instead of remaining only on the old directional pair.
 
 ## Agent Tools
 
@@ -128,8 +179,8 @@ The plugin exposes these tools inside OpenCode:
 | `honcho_get_config` | Read effective and persisted settings |
 | `honcho_set_config` | Update a persisted shared setting |
 | `honcho_search` | Search Honcho session messages in the current session |
-| `honcho_chat` | Query Honcho for reasoning-backed context |
-| `honcho_create_conclusion` | Save a durable memory conclusion |
+| `honcho_chat` | Query Honcho for reasoning-backed context (observer follows `observationMode`) |
+| `honcho_create_conclusion` | Save a durable memory conclusion (same observer as `honcho_chat`) |
 
 ## Plugin Surfaces
 
@@ -143,6 +194,13 @@ The plugin uses these OpenCode plugin capabilities:
 - `experimental.session.compacting`
 - `shell.env`
 - `tool`
+
+### How hooks drive memory
+
+- `experimental.chat.system.transform` always appends the Honcho memory instruction. With `recallMode` `hybrid` or `context` it also adds a stable memory snapshot (user profile, agent context, session summary), captured once on the first turn of a session.
+- `chat.message` appends prompt-specific recall to each user turn in `hybrid` and `context` mode. In `tools` mode nothing beyond the instruction is injected; the model reaches memory only through the `honcho_*` tools.
+- `tool.execute.after` records shell commands, file edits, and delegated tasks to the session. Read-only and trivial calls are skipped. Shell arguments that may carry credentials are redacted, keeping only the executable name.
+- On session start and after `honcho_setup`, the packaged `honcho-memory` skill is copied to `~/.config/opencode/skills/honcho-memory`, or `$OPENCODE_CONFIG_DIR/skills/honcho-memory` when set. An unchanged file is left untouched.
 
 ## Development
 
