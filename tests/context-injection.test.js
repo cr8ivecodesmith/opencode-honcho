@@ -53,7 +53,8 @@ const summary = (content) => ({
   token_count: 12,
 })
 
-const createHonchoFetch = ({ failStableHydration = false, deferChat = false } = {}) => {
+const createHonchoFetch = (fetchOptions = {}) => {
+  const { deferChat = false } = fetchOptions
   const calls = []
   const pendingChatReleases = []
   const fetch = async (url, init = {}) => {
@@ -99,7 +100,7 @@ const createHonchoFetch = ({ failStableHydration = false, deferChat = false } = 
     }
 
     if (method === "GET" && /\/v3\/workspaces\/opencode\/peers\/[^/]+\/context$/.test(target.pathname)) {
-      if (failStableHydration) {
+      if (fetchOptions.failStableHydration) {
         return jsonResponse({ message: "context unavailable" }, { status: 400 })
       }
       const peerId = decodeURIComponent(target.pathname.split("/").at(-2))
@@ -114,7 +115,7 @@ const createHonchoFetch = ({ failStableHydration = false, deferChat = false } = 
     }
 
     if (method === "GET" && /\/v3\/workspaces\/opencode\/sessions\/[^/]+\/summaries$/.test(target.pathname)) {
-      if (failStableHydration) {
+      if (fetchOptions.failStableHydration) {
         return jsonResponse({ message: "summaries unavailable" }, { status: 400 })
       }
       return jsonResponse({
@@ -125,7 +126,7 @@ const createHonchoFetch = ({ failStableHydration = false, deferChat = false } = 
     }
 
     if (method === "POST" && /\/v3\/workspaces\/opencode\/peers\/[^/]+\/chat$/.test(target.pathname)) {
-      if (failStableHydration) {
+      if (fetchOptions.failStableHydration) {
         return jsonResponse({ message: "chat unavailable" }, { status: 400 })
       }
       if (deferChat) {
@@ -288,6 +289,25 @@ test("overlapping session.created and system.transform hydrations share one dial
     await created
     await transformed
   }, { deferChat: true })
+})
+
+test("failed hydration is retried by the next trigger instead of cached", async () => {
+  const fetchOptions = { failStableHydration: true }
+  await runWithHarness(async ({ hooks, fetch }) => {
+    await hooks.event({
+      event: { type: "session.created", properties: { sessionID: "ses-test" } },
+    })
+    expect(
+      fetch.calls.filter((call) => call.method === "POST" && /\/peers\/[^/]+\/chat$/.test(call.pathname)),
+    ).toHaveLength(2)
+
+    fetchOptions.failStableHydration = false
+    const output = { system: [] }
+    await hooks["experimental.chat.system.transform"](systemInput(), output)
+
+    expect(output.system).toHaveLength(2)
+    expect(output.system[1]).toContain("The user prefers concise engineering analysis.")
+  }, fetchOptions)
 })
 
 test("chat.message skips recall for trivial prompt text", async () => {
