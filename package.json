@@ -1,9 +1,25 @@
 {
   "name": "@honcho-ai/opencode-honcho",
-  "version": "0.1.4",
+  "version": "0.2.1",
   "type": "module",
-  "description": "Honcho memory integration for OpenCode",
+  "description": "Honcho memory integration for OpenCode (1.x and 2.x)",
   "license": "MIT",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "plugin",
+    "memory",
+    "honcho",
+    "coding-agent"
+  ],
+  "homepage": "https://honcho.dev/docs/v3/guides/integrations/opencode",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plastic-labs/opencode-honcho.git"
+  },
+  "bugs": {
+    "url": "https://github.com/plastic-labs/opencode-honcho/issues"
+  },
   "packageManager": "bun@1.3.9",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,10 +37,13 @@
     "./capabilities": {
       "types": "./dist/capabilities.d.ts",
       "import": "./dist/capabilities.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "tui.js",
+    "server.js",
     "skills",
     "README.md",
     "CHANGELOG.md",
@@ -32,7 +51,7 @@
     "tsconfig.json"
   ],
   "scripts": {
-    "build": "bun --eval \"const { rm } = await import('node:fs/promises'); await rm('dist', { recursive: true, force: true })\" && bun build ./src/index.ts ./src/server.ts ./src/tui.ts ./src/capabilities.ts ./src/import.ts --outdir ./dist --target bun --external @opencode-ai/plugin && tsc --emitDeclarationOnly",
+    "build": "bun --eval \"const { rm } = await import('node:fs/promises'); await rm('dist', { recursive: true, force: true })\" && bun build ./src/index.ts ./src/server.ts ./src/tui.ts ./src/capabilities.ts ./src/import.ts --outdir ./dist --target node --external @opencode-ai/plugin --external @opencode/plugin && tsc --emitDeclarationOnly",
     "check": "tsc --noEmit",
     "test": "bun run build && bun test ./tests",
     "prepublishOnly": "bun run build"
@@ -40,9 +59,11 @@
   "dependencies": {
     "@honcho-ai/harness-plugin-core": "^0.1.0",
     "@honcho-ai/sdk": "^2.4.0",
-    "@opencode-ai/plugin": "^1.18.23"
+    "zod": "^4.1.8"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.23",
+    "@opencode/plugin": "^2.0.16",
     "@types/bun": "^1.2.8",
     "@types/node": "^22.13.9",
     "typescript": "^5.9.3"
