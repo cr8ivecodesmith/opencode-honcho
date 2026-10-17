@@ -64,3 +64,54 @@ test("tui saveSettings persists only supported root and host fields", async () =
     else process.env.USERPROFILE = previousUserProfile
   }
 })
+
+test("tui honors OPENCODE_HONCHO_CONFIG_PATH override for reads, writes, and display", async () => {
+  const homeDir = await mkdtemp(path.join(os.tmpdir(), "honcho-tui-override-"))
+  const globalConfigPath = path.join(homeDir, ".honcho", "config.json")
+  const overrideDir = path.join(homeDir, "override")
+  const overrideConfigPath = path.join(overrideDir, "custom.json")
+  const previousHome = process.env.HOME
+  const previousUserProfile = process.env.USERPROFILE
+  const previousOverride = process.env.OPENCODE_HONCHO_CONFIG_PATH
+
+  await mkdir(overrideDir, { recursive: true })
+  await writeFile(overrideConfigPath, JSON.stringify({ peerName: "override-peer" }, null, 2))
+  process.env.HOME = homeDir
+  process.env.USERPROFILE = homeDir
+  process.env.OPENCODE_HONCHO_CONFIG_PATH = overrideConfigPath
+
+  try {
+    assert.equal(__testing.sharedConfigPath(), overrideConfigPath)
+
+    const readBack = await __testing.readSharedConfig()
+    assert.equal(readBack.peerName, "override-peer")
+
+    await __testing.saveSettings({
+      apiKey: "key",
+      baseUrl: "https://api.honcho.dev",
+      hosts: { opencode: { workspace: "opencode" } },
+    })
+    const persisted = JSON.parse(await readFile(overrideConfigPath, "utf-8"))
+    assert.equal(persisted.apiKey, "key")
+    assert.equal(persisted.peerName, "override-peer")
+    assert.rejects(readFile(globalConfigPath, "utf-8"))
+
+    assert.match(__testing.settingsMessage({}), new RegExp(`Config path: ${overrideConfigPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`))
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousUserProfile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousUserProfile
+    if (previousOverride === undefined) delete process.env.OPENCODE_HONCHO_CONFIG_PATH
+    else process.env.OPENCODE_HONCHO_CONFIG_PATH = previousOverride
+  }
+})
+
+test("tui shows endpoint.baseUrl when there is no top-level baseUrl", () => {
+  const url = (settings) => __testing.settingsMessage(settings).match(/Base URL: (.*)/)[1]
+  const endpoint = { baseUrl: "http://selfhosted:8000" }
+  assert.equal(url({ endpoint }), "http://selfhosted:8000")
+  assert.equal(url({ endpoint: { baseUrl: "http://top:1" }, hosts: { opencode: { endpoint } } }), "http://selfhosted:8000")
+  assert.equal(url({ baseUrl: "http://explicit:9", endpoint }), "http://explicit:9")
+  assert.equal(url({}), "https://api.honcho.dev")
+})
