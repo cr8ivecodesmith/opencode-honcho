@@ -112,9 +112,10 @@ type ActiveRuntime = RuntimeHandle & {
 
 type SessionState = {
   stableContext: string | null
-  // Snapshot of stableContext frozen on the first system transform of the
-  // session. Frozen so provider prefix caches are never invalidated by a
-  // mid-session change to the system prompt.
+  // Snapshot of stableContext frozen on the first successful system transform
+  // of the session. Frozen so provider prefix caches are never invalidated by
+  // a mid-session change to the system prompt. A failed hydration leaves it
+  // unsealed so the next transform retries instead of pinning the failure.
   systemContext: string | null
   systemContextSealed: boolean
   // Hydration currently running for this session. Concurrent triggers share
@@ -1537,7 +1538,9 @@ export const createHonchoCore = (host: HostAdapter, configPath?: string) => {
       }, null)
 
     // System prompt additions: the Honcho instruction plus the stable memory snapshot, sealed
-    // on first use so the system prompt stays byte-identical for the rest of the session.
+    // on the first successful hydration so the system prompt stays byte-identical for the
+    // rest of the session. A failed hydration leaves the snapshot unsealed so the next
+    // transform retries instead of pinning the failed state for the whole session.
     const systemBlocks = async (input: Record<string, unknown>): Promise<string[]> => {
       const handle = await deriveRuntimeHandle(host, input, configPath)
       if (!hasConfiguredAuth(handle.config)) {
@@ -1550,9 +1553,16 @@ export const createHonchoCore = (host: HostAdapter, configPath?: string) => {
       const state = getState(deriveSessionStateKey(handle))
       if (!state.systemContextSealed) {
         if (!state.stableContext) {
-          await withRuntime(input, async (runtime) => {
-            await ensureStableContextHydration(runtime, state)
-          }, undefined)
+          const hydrated = await withRuntime(
+            input,
+            async (runtime) => {
+              return await ensureStableContextHydration(runtime, state)
+            },
+            false,
+          )
+          if (!hydrated) {
+            return blocks
+          }
         }
         state.systemContext = state.stableContext ?? ""
         state.systemContextSealed = true
