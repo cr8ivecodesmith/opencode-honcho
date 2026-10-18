@@ -578,9 +578,9 @@ const applyRawLayer = (target: HonchoSettings, raw: Record<string, unknown>) => 
       continue
     }
     if (BOOLEAN_KEYS.has(key)) {
-      // Coerce booleans at the read boundary: a config (or hand-edit, which the
-      // README invites) may carry the string "true"/"false". Only true/"true" is
-      // true, so a stray "false" can't be truthy and silently flip the prefix.
+      // Coerce booleans at the read boundary: a config may carry the string
+      // "true"/"false". Only true/"true" is true, so a stray "false" can't be
+      // truthy and silently flip the prefix.
       ;(target as Record<string, unknown>)[key] =
         value === true || (typeof value === "string" && value.trim().toLowerCase() === "true")
       continue
@@ -2116,9 +2116,9 @@ export const createHonchoRuntimePlugin =
           return
         }
         // Prompt-specific recall rides along with the user turn as a
-        // synthetic part (codex-honcho parity): it persists at the end of
-        // the conversation, so the system prompt - and with it the
-        // provider's prefix cache - is never invalidated mid-session.
+        // synthetic part: it persists at the end of the conversation, so
+        // the system prompt - and with it the provider's prefix cache -
+        // is never invalidated mid-session.
         const block = await core.captureUserPrompt(
           input,
           message,

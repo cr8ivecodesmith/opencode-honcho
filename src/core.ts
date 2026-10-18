@@ -239,9 +239,8 @@ export const honchoSessionKey = (
 
 export const deriveUserPeerId = (peerName: string, removeUserPrefix: boolean) => {
   const name = peerName.trim() || "user"
-  // Peer ids are identity values: the sibling claude-honcho / hermes-honcho
-  // plugins use the peer name without case folding, so keep case in both
-  // forms instead of silently lowercasing into a different peer.
+  // removeUserPrefix=true keeps the peer name verbatim (no case folding);
+  // lowercasing would silently target a different peer.
   return removeUserPrefix ? sanitizePeerId(name) : sanitizePeerId(`user:${name}`)
 }
 

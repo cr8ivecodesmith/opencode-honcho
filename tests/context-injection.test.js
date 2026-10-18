@@ -280,9 +280,6 @@ test("overlapping session.created and system.transform hydrations share one dial
       await tick()
     }
 
-    // Desired: both callers await one shared hydration (2 dialectic chat
-    // calls). Observed before the in-flight guard: each caller hydrates on
-    // its own (4 dialectic chat calls).
     expect(chatCalls()).toHaveLength(2)
 
     fetch.releasePendingChats()
@@ -318,15 +315,12 @@ test("failed system transform hydration stays unsealed so the next turn retries"
     const firstOutput = { system: [] }
     await hooks["experimental.chat.system.transform"](systemInput(), firstOutput)
 
-    // Hydration failed completely, so nothing stable was sealed...
     expect(firstOutput.system).toHaveLength(1)
     expect(chatCalls()).toHaveLength(2)
 
     const secondOutput = { system: [] }
     await hooks["experimental.chat.system.transform"](systemInput(), secondOutput)
 
-    // ...and the second turn retried instead of inheriting the sealed
-    // failed state.
     expect(secondOutput.system).toHaveLength(1)
     expect(chatCalls()).toHaveLength(4)
   }, { failStableHydration: true })
@@ -358,7 +352,6 @@ test("a later successful hydration seals the stable context after an earlier fai
       expect(secondOutput.system).toHaveLength(2)
       expect(secondOutput.system[1]).toContain("The user prefers concise engineering analysis.")
 
-      // Sealed now: the third turn reuses the snapshot without re-hydrating.
       const thirdOutput = { system: [] }
       await hooks["experimental.chat.system.transform"](systemInput(), thirdOutput)
       expect(thirdOutput.system).toEqual(secondOutput.system)
